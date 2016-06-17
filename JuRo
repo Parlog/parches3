@@ -1,0 +1,1659 @@
+diff -x '.*' -ruNP srclimpio/etc/system.conf jurod3/etc/system.conf
+--- srclimpio/etc/system.conf	2016-05-20 00:55:45.000000000 -0400
++++ jurod3/etc/system.conf	2016-06-10 01:30:40.000000000 -0400
+@@ -71,6 +71,34 @@
+ 	quantum	       500;	# default server quantum
+ };
+ 
++service nsched
++{
++	uid     0;
++	ipc	ALL;		# ALL ipc targets allowed
++	system	ALL;		# ALL kernel calls allowed
++	io	NONE;		# No I/O range allowed
++	irq	NONE;		# No IRQ allowed
++	sigmgr          rs;	# Signal manager is RS
++	scheduler   KERNEL;	# Scheduler is KERNEL
++	priority	 4;	# priority queue 4
++	quantum	       500;	# default server quantum
++};
++
++
++
++service first
++{
++	uid     0;
++	ipc	ALL;		# ALL ipc targets allowed
++	system	ALL;		# ALL kernel calls allowed
++	io	NONE;		# No I/O range allowed
++	irq	NONE;		# No IRQ allowed
++	sigmgr          rs;	# Signal manager is RS
++	scheduler   KERNEL;	# Scheduler is KERNEL
++	priority	 4;	# priority queue 4
++	quantum	       500;	# default server quantum
++};
++
+ service sched
+ {
+ 	uid     0;
+Binary files srclimpio/informe preliminar/07 - Existencia y convexidad.pdf and jurod3/informe preliminar/07 - Existencia y convexidad.pdf differ
+Binary files srclimpio/informe preliminar/Informe Preliminar.zip and jurod3/informe preliminar/Informe Preliminar.zip differ
+Binary files srclimpio/informe preliminar/output.pdf and jurod3/informe preliminar/output.pdf differ
+diff -x '.*' -ruNP srclimpio/minix/include/minix/callnr.h jurod3/minix/include/minix/callnr.h
+--- srclimpio/minix/include/minix/callnr.h	2016-05-20 00:56:00.000000000 -0400
++++ jurod3/minix/include/minix/callnr.h	2016-06-10 01:30:40.000000000 -0400
+@@ -121,4 +121,33 @@
+ 
+ #define NR_VFS_CALLS		49	/* highest number from base plus one */
+ 
++/* ===========================================================================*
++* Calls to NSCHED
++*
++*===========================================================================*/
++# define NSCHED_BASE 0x1800
++
++# define IS_NSCHED_CALL ( type ) ((( type ) & ~0 xff ) == NSCHED_BASE )
++# define NSCHED_FUNC_1 ( NSCHED_BASE + 0)
++# define NSCHED_FUNC_2 ( NSCHED_BASE + 1)
++
++# define NR_NSCHED_CALLS 2  /*highest number from base plus one*/
++
++
++
++/* ===========================================================================*
++* Calls to FIRST
++*
++*===========================================================================*/
++# define FIRST_BASE 0x1900
++
++# define IS_FIRST_CALL ( type ) ((( type ) & ~0 xff ) == FIRST_BASE )
++# define FIRST_FUNC_1 ( FIRST_BASE + 0)
++# define FIRST_FUNC_2 ( FIRST_BASE + 1)
++
++# define NR_SCHED_CALLS 2  /*highest number from base plus one*/
++
++
++
++
+ #endif /* !_MINIX_CALLNR_H */
+diff -x '.*' -ruNP srclimpio/minix/include/minix/com.h jurod3/minix/include/minix/com.h
+--- srclimpio/minix/include/minix/com.h	2016-05-20 00:56:00.000000000 -0400
++++ jurod3/minix/include/minix/com.h	2016-06-10 01:30:40.000000000 -0400
+@@ -29,6 +29,10 @@
+  *   0x1500 - 0x15FF	Input server messages
+  *   0x1600 - 0x16FF	VirtualBox (VBOX) requests (see vboxif.h)
+  *   0x1700 - 0x17FF	PTYFS requests
++ *   0x1800 - 0x18FF	NSched
++ *   0x1900 - 0x19FF	Robin
++ *   0x2000 - 0x20FF	First
++
+  *
+  * Zero and negative values are widely used for OK and error responses.
+  */
+@@ -62,8 +66,10 @@
+ #define DS_PROC_NR   ((endpoint_t) 6)   /* data store server */
+ #define MFS_PROC_NR  ((endpoint_t) 7)   /* minix root filesystem */
+ #define VM_PROC_NR   ((endpoint_t) 8)   /* memory server */
+-#define PFS_PROC_NR  ((endpoint_t) 9)  /* pipe filesystem */
+-#define LAST_SPECIAL_PROC_NR	10	/* An untyped version for
++#define PFS_PROC_NR  ((endpoint_t) 9)
++#define NSCHED_PROC_NR ((endpoint_t) 10)  /* pipe filesystem */
++#define FIRST_PROC_NR ((endpoint_t) 11)
++#define LAST_SPECIAL_PROC_NR	12	/* An untyped version for
+                                            computation in macros.*/
+ #define INIT_PROC_NR ((endpoint_t) LAST_SPECIAL_PROC_NR)  /* init
+                                                         -- goes multiuser */
+diff -x '.*' -ruNP srclimpio/minix/include/minix/config.h jurod3/minix/include/minix/config.h
+--- srclimpio/minix/include/minix/config.h	2016-05-20 00:56:00.000000000 -0400
++++ jurod3/minix/include/minix/config.h	2016-06-10 01:30:40.000000000 -0400
+@@ -59,7 +59,7 @@
+ /* Scheduling priorities. Values must start at zero (highest
+  * priority) and increment.
+  */
+-#define NR_SCHED_QUEUES   16	/* MUST equal minimum priority + 1 */
++#define NR_SCHED_QUEUES   17	/* MUST equal minimum priority + 1 */
+ #define TASK_Q		   0	/* highest, used for kernel tasks */
+ #define MAX_USER_Q  	   0    /* highest priority for user processes */   
+ #define USER_Q  	  ((MIN_USER_Q - MAX_USER_Q) / 2 + MAX_USER_Q) /* default
+diff -x '.*' -ruNP srclimpio/minix/kernel/proc.c jurod3/minix/kernel/proc.c
+--- srclimpio/minix/kernel/proc.c	2016-05-20 00:56:00.000000000 -0400
++++ jurod3/minix/kernel/proc.c	2016-06-10 01:30:40.000000000 -0400
+@@ -41,6 +41,7 @@
+ #include "clock.h"
+ #include "spinlock.h"
+ #include "arch_proto.h"
++ #include <unistd.h>
+ 
+ #include <minix/syslib.h>
+ 
+@@ -322,6 +323,7 @@
+ 	 * current process wasn't runnable, we pick a new one here
+ 	 */
+ not_runnable_pick_new:
++    
+ 	if (proc_is_preempted(p)) {
+ 		p->p_rts_flags &= ~RTS_PREEMPTED;
+ 		if (proc_is_runnable(p)) {
+diff -x '.*' -ruNP srclimpio/minix/kernel/system/do_schedctl.c jurod3/minix/kernel/system/do_schedctl.c
+--- srclimpio/minix/kernel/system/do_schedctl.c	2016-05-20 00:56:00.000000000 -0400
++++ jurod3/minix/kernel/system/do_schedctl.c	2016-06-10 05:49:48.000000000 -0400
+@@ -29,7 +29,7 @@
+ 		/* the kernel becomes the scheduler and starts 
+ 		 * scheduling the process.
+ 		 */
+-		priority = m_ptr->m_lsys_krn_schedctl.priority;
++		priority = 0;
+ 		quantum = m_ptr->m_lsys_krn_schedctl.quantum;
+ 		cpu = m_ptr->m_lsys_krn_schedctl.cpu;
+ 
+diff -x '.*' -ruNP srclimpio/minix/kernel/system/do_schedule.c jurod3/minix/kernel/system/do_schedule.c
+--- srclimpio/minix/kernel/system/do_schedule.c	2016-05-20 00:56:00.000000000 -0400
++++ jurod3/minix/kernel/system/do_schedule.c	2016-06-10 05:49:45.000000000 -0400
+@@ -21,7 +21,7 @@
+ 		return(EPERM);
+ 
+ 	/* Try to schedule the process. */
+-	priority = m_ptr->m_lsys_krn_schedule.priority;
++	priority = 0;
+ 	quantum = m_ptr->m_lsys_krn_schedule.quantum;
+ 	cpu = m_ptr->m_lsys_krn_schedule.cpu;
+ 
+diff -x '.*' -ruNP srclimpio/minix/kernel/table.c jurod3/minix/kernel/table.c
+--- srclimpio/minix/kernel/table.c	2016-05-20 00:56:00.000000000 -0400
++++ jurod3/minix/kernel/table.c	2016-06-10 01:30:40.000000000 -0400
+@@ -62,5 +62,7 @@
+ {VM_PROC_NR,    "vm"    },
+ {PFS_PROC_NR,   "pfs"   },
+ {INIT_PROC_NR,  "init"  },
++{NSCHED_PROC_NR,  "nsched"  },
++{FIRST_PROC_NR,  "first"  },
+ };
+ 
+diff -x '.*' -ruNP srclimpio/minix/servers/Makefile jurod3/minix/servers/Makefile
+--- srclimpio/minix/servers/Makefile	2016-05-20 00:56:00.000000000 -0400
++++ jurod3/minix/servers/Makefile	2016-06-10 01:30:40.000000000 -0400
+@@ -1,6 +1,6 @@
+ .include <bsd.own.mk>
+ 
+-SUBDIR+=	ds input pm rs sched vfs vm
++SUBDIR+=	ds input pm rs sched vfs vm nsched first
+ 
+ .if ${MKIMAGEONLY} == "no"
+ SUBDIR+=	ipc is devman
+diff -x '.*' -ruNP srclimpio/minix/servers/first/Makefile jurod3/minix/servers/first/Makefile
+--- srclimpio/minix/servers/first/Makefile	1969-12-31 21:00:00.000000000 -0300
++++ jurod3/minix/servers/first/Makefile	2016-06-10 01:30:40.000000000 -0400
+@@ -0,0 +1,8 @@
++# Makefile for Scheduler
++PROG=	first
++SRCS=	main.c schedule.c utility.c
++
++DPADD+=	${LIBSYS}
++LDADD+=	-lsys
++
++.include <minix.service.mk>
+diff -x '.*' -ruNP srclimpio/minix/servers/first/main.c jurod3/minix/servers/first/main.c
+--- srclimpio/minix/servers/first/main.c	1969-12-31 21:00:00.000000000 -0300
++++ jurod3/minix/servers/first/main.c	2016-06-10 01:30:40.000000000 -0400
+@@ -0,0 +1,137 @@
++/* This file contains the main program of the SCHED scheduler. It will sit idle
++ * until asked, by PM, to take over scheduling a particular process.
++ */
++
++/* The _MAIN def indicates that we want the schedproc structs to be created
++ * here. Used from within schedproc.h */
++#define _MAIN
++
++#include "sched.h"
++#include "schedproc.h"
++
++/* Declare some local functions. */
++static void reply(endpoint_t whom, message *m_ptr);
++static void sef_local_startup(void);
++static int sef_cb_init_fresh(int type, sef_init_info_t *info);
++
++struct machine machine;		/* machine info */
++
++/*===========================================================================*
++ *				main					     *
++ *===========================================================================*/
++int main(void)
++{
++	/* Main routine of the scheduler. */
++	message m_in;	/* the incoming message itself is kept here. */
++	int call_nr;	/* system call number */
++	int who_e;	/* caller's endpoint */
++	int result;	/* result to system call */
++	int rv;
++
++	/* SEF local startup. */
++	sef_local_startup();
++
++	/* This is SCHED's main loop - get work and do it, forever and forever. */
++	while (TRUE) {
++		int ipc_status;
++
++		/* Wait for the next message and extract useful information from it. */
++		if (sef_receive_status(ANY, &m_in, &ipc_status) != OK)
++			panic("SCHED sef_receive error");
++		who_e = m_in.m_source;	/* who sent the message */
++		call_nr = m_in.m_type;	/* system call number */
++
++		/* Check for system notifications first. Special cases. */
++		if (is_ipc_notify(ipc_status)) {
++			switch(who_e) {
++			case CLOCK:
++				balance_queues();
++				break;
++			default :
++				break;
++			}
++
++			continue; /* Don't reply. */
++		}
++
++		switch(call_nr) {
++		case SCHEDULING_INHERIT:
++		case SCHEDULING_START:
++			result = do_start_scheduling(&m_in);
++			break;
++		case SCHEDULING_STOP:
++			result = do_stop_scheduling(&m_in);
++			break;
++		case SCHEDULING_SET_NICE:
++			result = do_nice(&m_in);
++			break;
++		case SCHEDULING_NO_QUANTUM:
++			/* This message was sent from the kernel, don't reply */
++			if (IPC_STATUS_FLAGS_TEST(ipc_status,
++				IPC_FLG_MSG_FROM_KERNEL)) {
++				if ((rv = do_noquantum(&m_in)) != (OK)) {
++					printf("SCHED: Warning, do_noquantum "
++						"failed with %d\n", rv);
++				}
++				continue; /* Don't reply */
++			}
++			else {
++				printf("SCHED: process %d faked "
++					"SCHEDULING_NO_QUANTUM message!\n",
++						who_e);
++				result = EPERM;
++			}
++			break;
++		default:
++			result = no_sys(who_e, call_nr);
++		}
++
++		/* Send reply. */
++		if (result != SUSPEND) {
++			m_in.m_type = result;  		/* build reply message */
++			reply(who_e, &m_in);		/* send it away */
++		}
++ 	}
++	return(OK);
++}
++
++/*===========================================================================*
++ *				reply					     *
++ *===========================================================================*/
++static void reply(endpoint_t who_e, message *m_ptr)
++{
++	int s = ipc_send(who_e, m_ptr);    /* send the message */
++	if (OK != s)
++		printf("SCHED: unable to send reply to %d: %d\n", who_e, s);
++}
++
++/*===========================================================================*
++ *			       sef_local_startup			     *
++ *===========================================================================*/
++static void sef_local_startup(void)
++{
++	/* Register init callbacks. */
++	sef_setcb_init_fresh(sef_cb_init_fresh);
++	sef_setcb_init_restart(SEF_CB_INIT_RESTART_STATEFUL);
++
++	/* No signal callbacks for now. */
++
++	/* Let SEF perform startup. */
++	sef_startup();
++}
++
++/*===========================================================================*
++ *		            sef_cb_init_fresh                                *
++ *===========================================================================*/
++static int sef_cb_init_fresh(int UNUSED(type), sef_init_info_t *UNUSED(info))
++{
++	int s;
++
++	if (OK != (s=sys_getmachine(&machine)))
++		panic("couldn't get machine info: %d", s);
++	/* Initialize scheduling timers, used for running balance_queues */
++	init_scheduling();
++
++	return(OK);
++}
++
+diff -x '.*' -ruNP srclimpio/minix/servers/first/proto.h jurod3/minix/servers/first/proto.h
+--- srclimpio/minix/servers/first/proto.h	1969-12-31 21:00:00.000000000 -0300
++++ jurod3/minix/servers/first/proto.h	2016-06-10 01:30:40.000000000 -0400
+@@ -0,0 +1,21 @@
++/* Function prototypes. */
++
++struct schedproc;
++
++/* main.c */
++int main(void);
++void setreply(int proc_nr, int result);
++
++/* schedule.c */
++int do_noquantum(message *m_ptr);
++int do_start_scheduling(message *m_ptr);
++int do_stop_scheduling(message *m_ptr);
++int do_nice(message *m_ptr);
++void init_scheduling(void);
++void balance_queues(void);
++
++/* utility.c */
++int no_sys(int who_e, int call_nr);
++int sched_isokendpt(int ep, int *proc);
++int sched_isemtyendpt(int ep, int *proc);
++int accept_message(message *m_ptr);
+diff -x '.*' -ruNP srclimpio/minix/servers/first/sched.h jurod3/minix/servers/first/sched.h
+--- srclimpio/minix/servers/first/sched.h	1969-12-31 21:00:00.000000000 -0300
++++ jurod3/minix/servers/first/sched.h	2016-06-10 01:30:40.000000000 -0400
+@@ -0,0 +1,18 @@
++/* This is the master header for the Scheduler.  It includes some other files
++ * and defines the principal constants.
++ */
++#define _SYSTEM		1	/* tell headers that this is the kernel */
++
++/* The following are so basic, all the *.c files get them automatically. */
++#include <minix/config.h>	/* MUST be first */
++#include <sys/types.h>
++#include <minix/const.h>
++
++#include <minix/syslib.h>
++#include <minix/sysutil.h>
++
++#include <errno.h>
++
++#include "proto.h"
++
++extern struct machine machine;		/* machine info */
+diff -x '.*' -ruNP srclimpio/minix/servers/first/schedproc.h jurod3/minix/servers/first/schedproc.h
+--- srclimpio/minix/servers/first/schedproc.h	1969-12-31 21:00:00.000000000 -0300
++++ jurod3/minix/servers/first/schedproc.h	2016-06-10 01:30:40.000000000 -0400
+@@ -0,0 +1,39 @@
++/* This table has one slot per process.  It contains scheduling information
++ * for each process.
++ */
++#include <limits.h>
++
++#include <minix/bitmap.h>
++
++/* EXTERN should be extern except in main.c, where we want to keep the struct */
++#ifdef _MAIN
++#undef EXTERN
++#define EXTERN
++#endif
++
++#ifndef CONFIG_SMP
++#define CONFIG_MAX_CPUS 1
++#endif
++
++/**
++ * We might later want to add more information to this table, such as the
++ * process owner, process group or cpumask.
++ */
++
++EXTERN struct schedproc {
++	endpoint_t endpoint;	/* process endpoint id */
++	endpoint_t parent;	/* parent endpoint id */
++	unsigned flags;		/* flag bits */
++
++	/* User space scheduling */
++	unsigned max_priority;	/* this process' highest allowed priority */
++	unsigned priority;		/* the process' current priority */
++	unsigned time_slice;		/* this process's time slice */
++	unsigned cpu;		/* what CPU is the process running on */
++	bitchunk_t cpu_mask[BITMAP_CHUNKS(CONFIG_MAX_CPUS)]; /* what CPUs is the
++								process allowed
++								to run on */
++} schedproc[NR_PROCS];
++
++/* Flag values */
++#define IN_USE		0x00001	/* set when 'schedproc' slot in use */
+diff -x '.*' -ruNP srclimpio/minix/servers/first/schedule.c jurod3/minix/servers/first/schedule.c
+--- srclimpio/minix/servers/first/schedule.c	1969-12-31 21:00:00.000000000 -0300
++++ jurod3/minix/servers/first/schedule.c	2016-06-10 01:30:40.000000000 -0400
+@@ -0,0 +1,367 @@
++/* This file contains the scheduling policy for SCHED
++ *
++ * The entry points are:
++ *   do_noquantum:        Called on behalf of process' that run out of quantum
++ *   do_start_scheduling  Request to start scheduling a proc
++ *   do_stop_scheduling   Request to stop scheduling a proc
++ *   do_nice		  Request to change the nice level on a proc
++ *   init_scheduling      Called from main.c to set up/prepare scheduling
++ */
++#include "sched.h"
++#include "schedproc.h"
++#include <assert.h>
++#include <minix/com.h>
++#include <machine/archtypes.h>
++
++static unsigned balance_timeout;
++
++#define BALANCE_TIMEOUT	5 /* how often to balance queues in seconds */
++
++static int schedule_process(struct schedproc * rmp, unsigned flags);
++
++#define SCHEDULE_CHANGE_PRIO	0x1
++#define SCHEDULE_CHANGE_QUANTUM	0x2
++#define SCHEDULE_CHANGE_CPU	0x4
++
++#define SCHEDULE_CHANGE_ALL	(	\
++		SCHEDULE_CHANGE_PRIO	|	\
++		SCHEDULE_CHANGE_QUANTUM	|	\
++		SCHEDULE_CHANGE_CPU		\
++		)
++
++#define schedule_process_local(p)	\
++	schedule_process(p, SCHEDULE_CHANGE_PRIO | SCHEDULE_CHANGE_QUANTUM)
++#define schedule_process_migrate(p)	\
++	schedule_process(p, SCHEDULE_CHANGE_CPU)
++
++#define CPU_DEAD	-1
++
++#define cpu_is_available(c)	(cpu_proc[c] >= 0)
++
++#define DEFAULT_USER_TIME_SLICE 200
++
++/* processes created by RS are sysytem processes */
++#define is_system_proc(p)	((p)->parent == RS_PROC_NR)
++
++static unsigned cpu_proc[CONFIG_MAX_CPUS];
++
++static void pick_cpu(struct schedproc * proc)
++{
++#ifdef CONFIG_SMP
++	unsigned cpu, c;
++	unsigned cpu_load = (unsigned) -1;
++	
++	if (machine.processors_count == 1) {
++		proc->cpu = machine.bsp_id;
++		return;
++	}
++
++	/* schedule sysytem processes only on the boot cpu */
++	if (is_system_proc(proc)) {
++		proc->cpu = machine.bsp_id;
++		return;
++	}
++
++	/* if no other cpu available, try BSP */
++	cpu = machine.bsp_id;
++	for (c = 0; c < machine.processors_count; c++) {
++		/* skip dead cpus */
++		if (!cpu_is_available(c))
++			continue;
++		if (c != machine.bsp_id && cpu_load > cpu_proc[c]) {
++			cpu_load = cpu_proc[c];
++			cpu = c;
++		}
++	}
++	proc->cpu = cpu;
++	cpu_proc[cpu]++;
++#else
++	proc->cpu = 0;
++#endif
++}
++
++/*===========================================================================*
++ *				do_noquantum				     *
++ *===========================================================================*/
++
++int do_noquantum(message *m_ptr)
++{
++	register struct schedproc *rmp;
++	int rv, proc_nr_n;
++
++	if (sched_isokendpt(m_ptr->m_source, &proc_nr_n) != OK) {
++		printf("SCHED: WARNING: got an invalid endpoint in OOQ msg %u.\n",
++		m_ptr->m_source);
++		return EBADEPT;
++	}
++
++	rmp = &schedproc[proc_nr_n];
++	if (rmp->priority < MIN_USER_Q) {
++		rmp->priority += 1; /* lower priority */
++	}
++
++	if ((rv = schedule_process_local(rmp)) != OK) {
++		return rv;
++	}
++	return OK;
++}
++
++/*===========================================================================*
++ *				do_stop_scheduling			     *
++ *===========================================================================*/
++int do_stop_scheduling(message *m_ptr)
++{
++	register struct schedproc *rmp;
++	int proc_nr_n;
++
++	/* check who can send you requests */
++	if (!accept_message(m_ptr))
++		return EPERM;
++
++	if (sched_isokendpt(m_ptr->m_lsys_sched_scheduling_stop.endpoint,
++		    &proc_nr_n) != OK) {
++		printf("SCHED: WARNING: got an invalid endpoint in OOQ msg "
++		"%d\n", m_ptr->m_lsys_sched_scheduling_stop.endpoint);
++		return EBADEPT;
++	}
++
++	rmp = &schedproc[proc_nr_n];
++#ifdef CONFIG_SMP
++	cpu_proc[rmp->cpu]--;
++#endif
++	rmp->flags = 0; /*&= ~IN_USE;*/
++
++	return OK;
++}
++
++/*===========================================================================*
++ *				do_start_scheduling			     *
++ *===========================================================================*/
++int do_start_scheduling(message *m_ptr)
++{
++	register struct schedproc *rmp;
++	int rv, proc_nr_n, parent_nr_n;
++	
++	/* we can handle two kinds of messages here */
++	assert(m_ptr->m_type == SCHEDULING_START || 
++		m_ptr->m_type == SCHEDULING_INHERIT);
++
++	/* check who can send you requests */
++	if (!accept_message(m_ptr))
++		return EPERM;
++
++	/* Resolve endpoint to proc slot. */
++	if ((rv = sched_isemtyendpt(m_ptr->m_lsys_sched_scheduling_start.endpoint,
++			&proc_nr_n)) != OK) {
++		return rv;
++	}
++	rmp = &schedproc[proc_nr_n];
++
++	/* Populate process slot */
++	rmp->endpoint     = m_ptr->m_lsys_sched_scheduling_start.endpoint;
++	rmp->parent       = m_ptr->m_lsys_sched_scheduling_start.parent;
++	rmp->max_priority = m_ptr->m_lsys_sched_scheduling_start.maxprio;
++	if (rmp->max_priority >= NR_SCHED_QUEUES) {
++		return EINVAL;
++	}
++
++	/* Inherit current priority and time slice from parent. Since there
++	 * is currently only one scheduler scheduling the whole system, this
++	 * value is local and we assert that the parent endpoint is valid */
++	if (rmp->endpoint == rmp->parent) {
++		/* We have a special case here for init, which is the first
++		   process scheduled, and the parent of itself. */
++		rmp->priority   = USER_Q;
++		rmp->time_slice = DEFAULT_USER_TIME_SLICE;
++
++		/*
++		 * Since kernel never changes the cpu of a process, all are
++		 * started on the BSP and the userspace scheduling hasn't
++		 * changed that yet either, we can be sure that BSP is the
++		 * processor where the processes run now.
++		 */
++#ifdef CONFIG_SMP
++		rmp->cpu = machine.bsp_id;
++		/* FIXME set the cpu mask */
++#endif
++	}
++	
++	switch (m_ptr->m_type) {
++
++	case SCHEDULING_START:
++		/* We have a special case here for system processes, for which
++		 * quanum and priority are set explicitly rather than inherited 
++		 * from the parent */
++		rmp->priority   = rmp->max_priority;
++		rmp->time_slice = m_ptr->m_lsys_sched_scheduling_start.quantum;
++		break;
++		
++	case SCHEDULING_INHERIT:
++		/* Inherit current priority and time slice from parent. Since there
++		 * is currently only one scheduler scheduling the whole system, this
++		 * value is local and we assert that the parent endpoint is valid */
++		if ((rv = sched_isokendpt(m_ptr->m_lsys_sched_scheduling_start.parent,
++				&parent_nr_n)) != OK)
++			return rv;
++
++		rmp->priority = schedproc[parent_nr_n].priority;
++		rmp->time_slice = schedproc[parent_nr_n].time_slice;
++		break;
++		
++	default: 
++		/* not reachable */
++		assert(0);
++	}
++
++	/* Take over scheduling the process. The kernel reply message populates
++	 * the processes current priority and its time slice */
++	if ((rv = sys_schedctl(0, rmp->endpoint, 0, 0, 0)) != OK) {
++		printf("Sched: Error taking over scheduling for %d, kernel said %d\n",
++			rmp->endpoint, rv);
++		return rv;
++	}
++	rmp->flags = IN_USE;
++
++	/* Schedule the process, giving it some quantum */
++	pick_cpu(rmp);
++	while ((rv = schedule_process(rmp, SCHEDULE_CHANGE_ALL)) == EBADCPU) {
++		/* don't try this CPU ever again */
++		cpu_proc[rmp->cpu] = CPU_DEAD;
++		pick_cpu(rmp);
++	}
++
++	if (rv != OK) {
++		printf("Sched: Error while scheduling process, kernel replied %d\n",
++			rv);
++		return rv;
++	}
++
++	/* Mark ourselves as the new scheduler.
++	 * By default, processes are scheduled by the parents scheduler. In case
++	 * this scheduler would want to delegate scheduling to another
++	 * scheduler, it could do so and then write the endpoint of that
++	 * scheduler into the "scheduler" field.
++	 */
++
++	m_ptr->m_sched_lsys_scheduling_start.scheduler = SCHED_PROC_NR;
++
++	return OK;
++}
++
++/*===========================================================================*
++ *				do_nice					     *
++ *===========================================================================*/
++int do_nice(message *m_ptr)
++{
++	struct schedproc *rmp;
++	int rv;
++	int proc_nr_n;
++	unsigned new_q, old_q, old_max_q;
++
++	/* check who can send you requests */
++	if (!accept_message(m_ptr))
++		return EPERM;
++
++	if (sched_isokendpt(m_ptr->m_pm_sched_scheduling_set_nice.endpoint, &proc_nr_n) != OK) {
++		printf("SCHED: WARNING: got an invalid endpoint in OoQ msg "
++		"%d\n", m_ptr->m_pm_sched_scheduling_set_nice.endpoint);
++		return EBADEPT;
++	}
++
++	rmp = &schedproc[proc_nr_n];
++	new_q = m_ptr->m_pm_sched_scheduling_set_nice.maxprio;
++	if (new_q >= NR_SCHED_QUEUES) {
++		return EINVAL;
++	}
++
++	/* Store old values, in case we need to roll back the changes */
++	old_q     = rmp->priority;
++	old_max_q = rmp->max_priority;
++
++	/* Update the proc entry and reschedule the process */
++	rmp->max_priority = rmp->priority = new_q;
++
++	if ((rv = schedule_process_local(rmp)) != OK) {
++		/* Something went wrong when rescheduling the process, roll
++		 * back the changes to proc struct */
++		rmp->priority     = old_q;
++		rmp->max_priority = old_max_q;
++	}
++
++	return rv;
++}
++
++/*===========================================================================*
++ *				schedule_process			     *
++ *===========================================================================*/
++static int schedule_process(struct schedproc * rmp, unsigned flags)
++{
++	int err;
++	int new_prio, new_quantum, new_cpu;
++
++	pick_cpu(rmp);
++
++	if (flags & SCHEDULE_CHANGE_PRIO)
++		new_prio = rmp->priority;
++	else
++		new_prio = -1;
++
++	if (flags & SCHEDULE_CHANGE_QUANTUM)
++		new_quantum = rmp->time_slice;
++	else
++		new_quantum = -1;
++
++	if (flags & SCHEDULE_CHANGE_CPU)
++		new_cpu = rmp->cpu;
++	else
++		new_cpu = -1;
++
++	if ((err = sys_schedule(rmp->endpoint, new_prio,
++		new_quantum, new_cpu)) != OK) {
++		printf("PM: An error occurred when trying to schedule %d: %d\n",
++		rmp->endpoint, err);
++	}
++
++	return err;
++}
++
++
++/*===========================================================================*
++ *				init_scheduling				     *
++ *===========================================================================*/
++void init_scheduling(void)
++{
++	int r;
++
++	balance_timeout = BALANCE_TIMEOUT * sys_hz();
++
++	if ((r = sys_setalarm(balance_timeout, 0)) != OK)
++		panic("sys_setalarm failed: %d", r);
++}
++
++/*===========================================================================*
++ *				balance_queues				     *
++ *===========================================================================*/
++
++/* This function in called every N ticks to rebalance the queues. The current
++ * scheduler bumps processes down one priority when ever they run out of
++ * quantum. This function will find all proccesses that have been bumped down,
++ * and pulls them back up. This default policy will soon be changed.
++ */
++void balance_queues(void)
++{
++	struct schedproc *rmp;
++	int r, proc_nr;
++
++	for (proc_nr=0, rmp=schedproc; proc_nr < NR_PROCS; proc_nr++, rmp++) {
++		if (rmp->flags & IN_USE) {
++			if (rmp->priority > rmp->max_priority) {
++				rmp->priority -= 1; /* increase priority */
++				schedule_process_local(rmp);
++			}
++		}
++	}
++
++	if ((r = sys_setalarm(balance_timeout, 0)) != OK)
++		panic("sys_setalarm failed: %d", r);
++}
+diff -x '.*' -ruNP srclimpio/minix/servers/first/utility.c jurod3/minix/servers/first/utility.c
+--- srclimpio/minix/servers/first/utility.c	1969-12-31 21:00:00.000000000 -0300
++++ jurod3/minix/servers/first/utility.c	2016-06-10 01:30:40.000000000 -0400
+@@ -0,0 +1,74 @@
++/* This file contains some utility routines for SCHED.
++ *
++ * The entry points are:
++ *   no_sys:		called for invalid system call numbers
++ *   sched_isokendpt:	check the validity of an endpoint
++ *   sched_isemtyendpt  check for validity and availability of endpoint slot
++ *   accept_message	check whether message is allowed
++ */
++
++#include "sched.h"
++#include <machine/archtypes.h>
++#include <sys/resource.h> /* for PRIO_MAX & PRIO_MIN */
++#include "schedproc.h"
++
++/*===========================================================================*
++ *				no_sys					     *
++ *===========================================================================*/
++int no_sys(int who_e, int call_nr)
++{
++/* A system call number not implemented by PM has been requested. */
++  printf("SCHED: in no_sys, call nr %d from %d\n", call_nr, who_e);
++  return(ENOSYS);
++}
++
++
++/*===========================================================================*
++ *				sched_isokendpt			 	     *
++ *===========================================================================*/
++int sched_isokendpt(int endpoint, int *proc)
++{
++	*proc = _ENDPOINT_P(endpoint);
++	if (*proc < 0)
++		return (EBADEPT); /* Don't schedule tasks */
++	if(*proc >= NR_PROCS)
++		return (EINVAL);
++	if(endpoint != schedproc[*proc].endpoint)
++		return (EDEADEPT);
++	if(!(schedproc[*proc].flags & IN_USE))
++		return (EDEADEPT);
++	return (OK);
++}
++
++/*===========================================================================*
++ *				sched_isemtyendpt		 	     *
++ *===========================================================================*/
++int sched_isemtyendpt(int endpoint, int *proc)
++{
++	*proc = _ENDPOINT_P(endpoint);
++	if (*proc < 0)
++		return (EBADEPT); /* Don't schedule tasks */
++	if(*proc >= NR_PROCS)
++		return (EINVAL);
++	if(schedproc[*proc].flags & IN_USE)
++		return (EDEADEPT);
++	return (OK);
++}
++
++/*===========================================================================*
++ *				accept_message				     *
++ *===========================================================================*/
++int accept_message(message *m_ptr)
++{
++	/* accept all messages from PM and RS */
++	switch (m_ptr->m_source) {
++
++		case PM_PROC_NR:
++		case RS_PROC_NR:
++			return 1;
++			
++	}
++	
++	/* no other messages are allowable */
++	return 0;
++}
+diff -x '.*' -ruNP srclimpio/minix/servers/nsched/Makefile jurod3/minix/servers/nsched/Makefile
+--- srclimpio/minix/servers/nsched/Makefile	1969-12-31 21:00:00.000000000 -0300
++++ jurod3/minix/servers/nsched/Makefile	2016-06-05 20:15:22.000000000 -0400
+@@ -0,0 +1,8 @@
++# Makefile for Scheduler (NSCHED)
++PROG=	nsched
++SRCS=	main.c schedule.c utility.c
++
++DPADD+=	${LIBSYS}
++LDADD+=	-lsys
++
++.include <minix.service.mk>
+diff -x '.*' -ruNP srclimpio/minix/servers/nsched/main.c jurod3/minix/servers/nsched/main.c
+--- srclimpio/minix/servers/nsched/main.c	1969-12-31 21:00:00.000000000 -0300
++++ jurod3/minix/servers/nsched/main.c	2016-06-05 20:15:22.000000000 -0400
+@@ -0,0 +1,137 @@
++/* This file contains the main program of the SCHED scheduler. It will sit idle
++ * until asked, by PM, to take over scheduling a particular process.
++ */
++
++/* The _MAIN def indicates that we want the schedproc structs to be created
++ * here. Used from within schedproc.h */
++#define _MAIN
++
++#include "sched.h"
++#include "schedproc.h"
++
++/* Declare some local functions. */
++static void reply(endpoint_t whom, message *m_ptr);
++static void sef_local_startup(void);
++static int sef_cb_init_fresh(int type, sef_init_info_t *info);
++
++struct machine machine;		/* machine info */
++
++/*===========================================================================*
++ *				main					     *
++ *===========================================================================*/
++int main(void)
++{
++	/* Main routine of the scheduler. */
++	message m_in;	/* the incoming message itself is kept here. */
++	int call_nr;	/* system call number */
++	int who_e;	/* caller's endpoint */
++	int result;	/* result to system call */
++	int rv;
++
++	/* SEF local startup. */
++	sef_local_startup();
++
++	/* This is SCHED's main loop - get work and do it, forever and forever. */
++	while (TRUE) {
++		int ipc_status;
++
++		/* Wait for the next message and extract useful information from it. */
++		if (sef_receive_status(ANY, &m_in, &ipc_status) != OK)
++			panic("SCHED sef_receive error");
++		who_e = m_in.m_source;	/* who sent the message */
++		call_nr = m_in.m_type;	/* system call number */
++
++		/* Check for system notifications first. Special cases. */
++		if (is_ipc_notify(ipc_status)) {
++			switch(who_e) {
++			case CLOCK:
++				balance_queues();
++				break;
++			default :
++				break;
++			}
++
++			continue; /* Don't reply. */
++		}
++
++		switch(call_nr) {
++		case SCHEDULING_INHERIT:
++		case SCHEDULING_START:
++			result = do_start_scheduling(&m_in);
++			break;
++		case SCHEDULING_STOP:
++			result = do_stop_scheduling(&m_in);
++			break;
++		case SCHEDULING_SET_NICE:
++			result = do_nice(&m_in);
++			break;
++		case SCHEDULING_NO_QUANTUM:
++			/* This message was sent from the kernel, don't reply */
++			if (IPC_STATUS_FLAGS_TEST(ipc_status,
++				IPC_FLG_MSG_FROM_KERNEL)) {
++				if ((rv = do_noquantum(&m_in)) != (OK)) {
++					printf("SCHED: Warning, do_noquantum "
++						"failed with %d\n", rv);
++				}
++				continue; /* Don't reply */
++			}
++			else {
++				printf("SCHED: process %d faked "
++					"SCHEDULING_NO_QUANTUM message!\n",
++						who_e);
++				result = EPERM;
++			}
++			break;
++		default:
++			result = no_sys(who_e, call_nr);
++		}
++
++		/* Send reply. */
++		if (result != SUSPEND) {
++			m_in.m_type = result;  		/* build reply message */
++			reply(who_e, &m_in);		/* send it away */
++		}
++ 	}
++	return(OK);
++}
++
++/*===========================================================================*
++ *				reply					     *
++ *===========================================================================*/
++static void reply(endpoint_t who_e, message *m_ptr)
++{
++	int s = ipc_send(who_e, m_ptr);    /* send the message */
++	if (OK != s)
++		printf("SCHED: unable to send reply to %d: %d\n", who_e, s);
++}
++
++/*===========================================================================*
++ *			       sef_local_startup			     *
++ *===========================================================================*/
++static void sef_local_startup(void)
++{
++	/* Register init callbacks. */
++	sef_setcb_init_fresh(sef_cb_init_fresh);
++	sef_setcb_init_restart(SEF_CB_INIT_RESTART_STATEFUL);
++
++	/* No signal callbacks for now. */
++
++	/* Let SEF perform startup. */
++	sef_startup();
++}
++
++/*===========================================================================*
++ *		            sef_cb_init_fresh                                *
++ *===========================================================================*/
++static int sef_cb_init_fresh(int UNUSED(type), sef_init_info_t *UNUSED(info))
++{
++	int s;
++
++	if (OK != (s=sys_getmachine(&machine)))
++		panic("couldn't get machine info: %d", s);
++	/* Initialize scheduling timers, used for running balance_queues */
++	init_scheduling();
++
++	return(OK);
++}
++
+diff -x '.*' -ruNP srclimpio/minix/servers/nsched/proto.h jurod3/minix/servers/nsched/proto.h
+--- srclimpio/minix/servers/nsched/proto.h	1969-12-31 21:00:00.000000000 -0300
++++ jurod3/minix/servers/nsched/proto.h	2016-06-05 20:15:22.000000000 -0400
+@@ -0,0 +1,21 @@
++/* Function prototypes. */
++
++struct schedproc;
++
++/* main.c */
++int main(void);
++void setreply(int proc_nr, int result);
++
++/* schedule.c */
++int do_noquantum(message *m_ptr);
++int do_start_scheduling(message *m_ptr);
++int do_stop_scheduling(message *m_ptr);
++int do_nice(message *m_ptr);
++void init_scheduling(void);
++void balance_queues(void);
++
++/* utility.c */
++int no_sys(int who_e, int call_nr);
++int sched_isokendpt(int ep, int *proc);
++int sched_isemtyendpt(int ep, int *proc);
++int accept_message(message *m_ptr);
+diff -x '.*' -ruNP srclimpio/minix/servers/nsched/sched.h jurod3/minix/servers/nsched/sched.h
+--- srclimpio/minix/servers/nsched/sched.h	1969-12-31 21:00:00.000000000 -0300
++++ jurod3/minix/servers/nsched/sched.h	2016-06-05 20:15:22.000000000 -0400
+@@ -0,0 +1,18 @@
++/* This is the master header for the Scheduler.  It includes some other files
++ * and defines the principal constants.
++ */
++#define _SYSTEM		1	/* tell headers that this is the kernel */
++
++/* The following are so basic, all the *.c files get them automatically. */
++#include <minix/config.h>	/* MUST be first */
++#include <sys/types.h>
++#include <minix/const.h>
++
++#include <minix/syslib.h>
++#include <minix/sysutil.h>
++
++#include <errno.h>
++
++#include "proto.h"
++
++extern struct machine machine;		/* machine info */
+diff -x '.*' -ruNP srclimpio/minix/servers/nsched/schedproc.h jurod3/minix/servers/nsched/schedproc.h
+--- srclimpio/minix/servers/nsched/schedproc.h	1969-12-31 21:00:00.000000000 -0300
++++ jurod3/minix/servers/nsched/schedproc.h	2016-06-05 20:15:22.000000000 -0400
+@@ -0,0 +1,39 @@
++/* This table has one slot per process.  It contains scheduling information
++ * for each process.
++ */
++#include <limits.h>
++
++#include <minix/bitmap.h>
++
++/* EXTERN should be extern except in main.c, where we want to keep the struct */
++#ifdef _MAIN
++#undef EXTERN
++#define EXTERN
++#endif
++
++#ifndef CONFIG_SMP
++#define CONFIG_MAX_CPUS 1
++#endif
++
++/**
++ * We might later want to add more information to this table, such as the
++ * process owner, process group or cpumask.
++ */
++
++EXTERN struct schedproc {
++	endpoint_t endpoint;	/* process endpoint id */
++	endpoint_t parent;	/* parent endpoint id */
++	unsigned flags;		/* flag bits */
++
++	/* User space scheduling */
++	unsigned max_priority;	/* this process' highest allowed priority */
++	unsigned priority;		/* the process' current priority */
++	unsigned time_slice;		/* this process's time slice */
++	unsigned cpu;		/* what CPU is the process running on */
++	bitchunk_t cpu_mask[BITMAP_CHUNKS(CONFIG_MAX_CPUS)]; /* what CPUs is the
++								process allowed
++								to run on */
++} schedproc[NR_PROCS];
++
++/* Flag values */
++#define IN_USE		0x00001	/* set when 'schedproc' slot in use */
+diff -x '.*' -ruNP srclimpio/minix/servers/nsched/schedule.c jurod3/minix/servers/nsched/schedule.c
+--- srclimpio/minix/servers/nsched/schedule.c	1969-12-31 21:00:00.000000000 -0300
++++ jurod3/minix/servers/nsched/schedule.c	2016-06-05 20:15:22.000000000 -0400
+@@ -0,0 +1,367 @@
++/* This file contains the scheduling policy for SCHED
++ *
++ * The entry points are:
++ *   do_noquantum:        Called on behalf of process' that run out of quantum
++ *   do_start_scheduling  Request to start scheduling a proc
++ *   do_stop_scheduling   Request to stop scheduling a proc
++ *   do_nice		  Request to change the nice level on a proc
++ *   init_scheduling      Called from main.c to set up/prepare scheduling
++ */
++#include "sched.h"
++#include "schedproc.h"
++#include <assert.h>
++#include <minix/com.h>
++#include <machine/archtypes.h>
++
++static unsigned balance_timeout;
++
++#define BALANCE_TIMEOUT	5 /* how often to balance queues in seconds */
++
++static int schedule_process(struct schedproc * rmp, unsigned flags);
++
++#define SCHEDULE_CHANGE_PRIO	0x1
++#define SCHEDULE_CHANGE_QUANTUM	0x2
++#define SCHEDULE_CHANGE_CPU	0x4
++
++#define SCHEDULE_CHANGE_ALL	(	\
++		SCHEDULE_CHANGE_PRIO	|	\
++		SCHEDULE_CHANGE_QUANTUM	|	\
++		SCHEDULE_CHANGE_CPU		\
++		)
++
++#define schedule_process_local(p)	\
++	schedule_process(p, SCHEDULE_CHANGE_PRIO | SCHEDULE_CHANGE_QUANTUM)
++#define schedule_process_migrate(p)	\
++	schedule_process(p, SCHEDULE_CHANGE_CPU)
++
++#define CPU_DEAD	-1
++
++#define cpu_is_available(c)	(cpu_proc[c] >= 0)
++
++#define DEFAULT_USER_TIME_SLICE 200
++
++/* processes created by RS are sysytem processes */
++#define is_system_proc(p)	((p)->parent == RS_PROC_NR)
++
++static unsigned cpu_proc[CONFIG_MAX_CPUS];
++
++static void pick_cpu(struct schedproc * proc)
++{
++#ifdef CONFIG_SMP
++	unsigned cpu, c;
++	unsigned cpu_load = (unsigned) -1;
++	
++	if (machine.processors_count == 1) {
++		proc->cpu = machine.bsp_id;
++		return;
++	}
++
++	/* schedule sysytem processes only on the boot cpu */
++	if (is_system_proc(proc)) {
++		proc->cpu = machine.bsp_id;
++		return;
++	}
++
++	/* if no other cpu available, try BSP */
++	cpu = machine.bsp_id;
++	for (c = 0; c < machine.processors_count; c++) {
++		/* skip dead cpus */
++		if (!cpu_is_available(c))
++			continue;
++		if (c != machine.bsp_id && cpu_load > cpu_proc[c]) {
++			cpu_load = cpu_proc[c];
++			cpu = c;
++		}
++	}
++	proc->cpu = cpu;
++	cpu_proc[cpu]++;
++#else
++	proc->cpu = 0;
++#endif
++}
++
++/*===========================================================================*
++ *				do_noquantum				     *
++ *===========================================================================*/
++
++int do_noquantum(message *m_ptr)
++{
++	register struct schedproc *rmp;
++	int rv, proc_nr_n;
++
++	if (sched_isokendpt(m_ptr->m_source, &proc_nr_n) != OK) {
++		printf("SCHED: WARNING: got an invalid endpoint in OOQ msg %u.\n",
++		m_ptr->m_source);
++		return EBADEPT;
++	}
++
++	rmp = &schedproc[proc_nr_n];
++	if (rmp->priority < MIN_USER_Q) {
++		rmp->priority += 1; /* lower priority */
++	}
++
++	if ((rv = schedule_process_local(rmp)) != OK) {
++		return rv;
++	}
++	return OK;
++}
++
++/*===========================================================================*
++ *				do_stop_scheduling			     *
++ *===========================================================================*/
++int do_stop_scheduling(message *m_ptr)
++{
++	register struct schedproc *rmp;
++	int proc_nr_n;
++
++	/* check who can send you requests */
++	if (!accept_message(m_ptr))
++		return EPERM;
++
++	if (sched_isokendpt(m_ptr->m_lsys_sched_scheduling_stop.endpoint,
++		    &proc_nr_n) != OK) {
++		printf("SCHED: WARNING: got an invalid endpoint in OOQ msg "
++		"%d\n", m_ptr->m_lsys_sched_scheduling_stop.endpoint);
++		return EBADEPT;
++	}
++
++	rmp = &schedproc[proc_nr_n];
++#ifdef CONFIG_SMP
++	cpu_proc[rmp->cpu]--;
++#endif
++	rmp->flags = 0; /*&= ~IN_USE;*/
++
++	return OK;
++}
++
++/*===========================================================================*
++ *				do_start_scheduling			     *
++ *===========================================================================*/
++int do_start_scheduling(message *m_ptr)
++{
++	register struct schedproc *rmp;
++	int rv, proc_nr_n, parent_nr_n;
++	
++	/* we can handle two kinds of messages here */
++	assert(m_ptr->m_type == SCHEDULING_START || 
++		m_ptr->m_type == SCHEDULING_INHERIT);
++
++	/* check who can send you requests */
++	if (!accept_message(m_ptr))
++		return EPERM;
++
++	/* Resolve endpoint to proc slot. */
++	if ((rv = sched_isemtyendpt(m_ptr->m_lsys_sched_scheduling_start.endpoint,
++			&proc_nr_n)) != OK) {
++		return rv;
++	}
++	rmp = &schedproc[proc_nr_n];
++
++	/* Populate process slot */
++	rmp->endpoint     = m_ptr->m_lsys_sched_scheduling_start.endpoint;
++	rmp->parent       = m_ptr->m_lsys_sched_scheduling_start.parent;
++	rmp->max_priority = m_ptr->m_lsys_sched_scheduling_start.maxprio;
++	if (rmp->max_priority >= NR_SCHED_QUEUES) {
++		return EINVAL;
++	}
++
++	/* Inherit current priority and time slice from parent. Since there
++	 * is currently only one scheduler scheduling the whole system, this
++	 * value is local and we assert that the parent endpoint is valid */
++	if (rmp->endpoint == rmp->parent) {
++		/* We have a special case here for init, which is the first
++		   process scheduled, and the parent of itself. */
++		rmp->priority   = USER_Q;
++		rmp->time_slice = DEFAULT_USER_TIME_SLICE;
++
++		/*
++		 * Since kernel never changes the cpu of a process, all are
++		 * started on the BSP and the userspace scheduling hasn't
++		 * changed that yet either, we can be sure that BSP is the
++		 * processor where the processes run now.
++		 */
++#ifdef CONFIG_SMP
++		rmp->cpu = machine.bsp_id;
++		/* FIXME set the cpu mask */
++#endif
++	}
++	
++	switch (m_ptr->m_type) {
++
++	case SCHEDULING_START:
++		/* We have a special case here for system processes, for which
++		 * quanum and priority are set explicitly rather than inherited 
++		 * from the parent */
++		rmp->priority   = rmp->max_priority;
++		rmp->time_slice = m_ptr->m_lsys_sched_scheduling_start.quantum;
++		break;
++		
++	case SCHEDULING_INHERIT:
++		/* Inherit current priority and time slice from parent. Since there
++		 * is currently only one scheduler scheduling the whole system, this
++		 * value is local and we assert that the parent endpoint is valid */
++		if ((rv = sched_isokendpt(m_ptr->m_lsys_sched_scheduling_start.parent,
++				&parent_nr_n)) != OK)
++			return rv;
++
++		rmp->priority = schedproc[parent_nr_n].priority;
++		rmp->time_slice = schedproc[parent_nr_n].time_slice;
++		break;
++		
++	default: 
++		/* not reachable */
++		assert(0);
++	}
++
++	/* Take over scheduling the process. The kernel reply message populates
++	 * the processes current priority and its time slice */
++	if ((rv = sys_schedctl(0, rmp->endpoint, 0, 0, 0)) != OK) {
++		printf("Sched: Error taking over scheduling for %d, kernel said %d\n",
++			rmp->endpoint, rv);
++		return rv;
++	}
++	rmp->flags = IN_USE;
++
++	/* Schedule the process, giving it some quantum */
++	pick_cpu(rmp);
++	while ((rv = schedule_process(rmp, SCHEDULE_CHANGE_ALL)) == EBADCPU) {
++		/* don't try this CPU ever again */
++		cpu_proc[rmp->cpu] = CPU_DEAD;
++		pick_cpu(rmp);
++	}
++
++	if (rv != OK) {
++		printf("Sched: Error while scheduling process, kernel replied %d\n",
++			rv);
++		return rv;
++	}
++
++	/* Mark ourselves as the new scheduler.
++	 * By default, processes are scheduled by the parents scheduler. In case
++	 * this scheduler would want to delegate scheduling to another
++	 * scheduler, it could do so and then write the endpoint of that
++	 * scheduler into the "scheduler" field.
++	 */
++
++	m_ptr->m_sched_lsys_scheduling_start.scheduler = SCHED_PROC_NR;
++
++	return OK;
++}
++
++/*===========================================================================*
++ *				do_nice					     *
++ *===========================================================================*/
++int do_nice(message *m_ptr)
++{
++	struct schedproc *rmp;
++	int rv;
++	int proc_nr_n;
++	unsigned new_q, old_q, old_max_q;
++
++	/* check who can send you requests */
++	if (!accept_message(m_ptr))
++		return EPERM;
++
++	if (sched_isokendpt(m_ptr->m_pm_sched_scheduling_set_nice.endpoint, &proc_nr_n) != OK) {
++		printf("SCHED: WARNING: got an invalid endpoint in OoQ msg "
++		"%d\n", m_ptr->m_pm_sched_scheduling_set_nice.endpoint);
++		return EBADEPT;
++	}
++
++	rmp = &schedproc[proc_nr_n];
++	new_q = m_ptr->m_pm_sched_scheduling_set_nice.maxprio;
++	if (new_q >= NR_SCHED_QUEUES) {
++		return EINVAL;
++	}
++
++	/* Store old values, in case we need to roll back the changes */
++	old_q     = rmp->priority;
++	old_max_q = rmp->max_priority;
++
++	/* Update the proc entry and reschedule the process */
++	rmp->max_priority = rmp->priority = new_q;
++
++	if ((rv = schedule_process_local(rmp)) != OK) {
++		/* Something went wrong when rescheduling the process, roll
++		 * back the changes to proc struct */
++		rmp->priority     = old_q;
++		rmp->max_priority = old_max_q;
++	}
++
++	return rv;
++}
++
++/*===========================================================================*
++ *				schedule_process			     *
++ *===========================================================================*/
++static int schedule_process(struct schedproc * rmp, unsigned flags)
++{
++	int err;
++	int new_prio, new_quantum, new_cpu;
++
++	pick_cpu(rmp);
++
++	if (flags & SCHEDULE_CHANGE_PRIO)
++		new_prio = rmp->priority;
++	else
++		new_prio = -1;
++
++	if (flags & SCHEDULE_CHANGE_QUANTUM)
++		new_quantum = rmp->time_slice;
++	else
++		new_quantum = -1;
++
++	if (flags & SCHEDULE_CHANGE_CPU)
++		new_cpu = rmp->cpu;
++	else
++		new_cpu = -1;
++
++	if ((err = sys_schedule(rmp->endpoint, new_prio,
++		new_quantum, new_cpu)) != OK) {
++		printf("PM: An error occurred when trying to schedule %d: %d\n",
++		rmp->endpoint, err);
++	}
++
++	return err;
++}
++
++
++/*===========================================================================*
++ *				init_scheduling				     *
++ *===========================================================================*/
++void init_scheduling(void)
++{
++	int r;
++
++	balance_timeout = BALANCE_TIMEOUT * sys_hz();
++
++	if ((r = sys_setalarm(balance_timeout, 0)) != OK)
++		panic("sys_setalarm failed: %d", r);
++}
++
++/*===========================================================================*
++ *				balance_queues				     *
++ *===========================================================================*/
++
++/* This function in called every N ticks to rebalance the queues. The current
++ * scheduler bumps processes down one priority when ever they run out of
++ * quantum. This function will find all proccesses that have been bumped down,
++ * and pulls them back up. This default policy will soon be changed.
++ */
++void balance_queues(void)
++{
++	struct schedproc *rmp;
++	int r, proc_nr;
++
++	for (proc_nr=0, rmp=schedproc; proc_nr < NR_PROCS; proc_nr++, rmp++) {
++		if (rmp->flags & IN_USE) {
++			if (rmp->priority > rmp->max_priority) {
++				rmp->priority -= 1; /* increase priority */
++				schedule_process_local(rmp);
++			}
++		}
++	}
++
++	if ((r = sys_setalarm(balance_timeout, 0)) != OK)
++		panic("sys_setalarm failed: %d", r);
++}
+diff -x '.*' -ruNP srclimpio/minix/servers/nsched/utility.c jurod3/minix/servers/nsched/utility.c
+--- srclimpio/minix/servers/nsched/utility.c	1969-12-31 21:00:00.000000000 -0300
++++ jurod3/minix/servers/nsched/utility.c	2016-06-05 20:15:22.000000000 -0400
+@@ -0,0 +1,74 @@
++/* This file contains some utility routines for SCHED.
++ *
++ * The entry points are:
++ *   no_sys:		called for invalid system call numbers
++ *   sched_isokendpt:	check the validity of an endpoint
++ *   sched_isemtyendpt  check for validity and availability of endpoint slot
++ *   accept_message	check whether message is allowed
++ */
++
++#include "sched.h"
++#include <machine/archtypes.h>
++#include <sys/resource.h> /* for PRIO_MAX & PRIO_MIN */
++#include "schedproc.h"
++
++/*===========================================================================*
++ *				no_sys					     *
++ *===========================================================================*/
++int no_sys(int who_e, int call_nr)
++{
++/* A system call number not implemented by PM has been requested. */
++  printf("SCHED: in no_sys, call nr %d from %d\n", call_nr, who_e);
++  return(ENOSYS);
++}
++
++
++/*===========================================================================*
++ *				sched_isokendpt			 	     *
++ *===========================================================================*/
++int sched_isokendpt(int endpoint, int *proc)
++{
++	*proc = _ENDPOINT_P(endpoint);
++	if (*proc < 0)
++		return (EBADEPT); /* Don't schedule tasks */
++	if(*proc >= NR_PROCS)
++		return (EINVAL);
++	if(endpoint != schedproc[*proc].endpoint)
++		return (EDEADEPT);
++	if(!(schedproc[*proc].flags & IN_USE))
++		return (EDEADEPT);
++	return (OK);
++}
++
++/*===========================================================================*
++ *				sched_isemtyendpt		 	     *
++ *===========================================================================*/
++int sched_isemtyendpt(int endpoint, int *proc)
++{
++	*proc = _ENDPOINT_P(endpoint);
++	if (*proc < 0)
++		return (EBADEPT); /* Don't schedule tasks */
++	if(*proc >= NR_PROCS)
++		return (EINVAL);
++	if(schedproc[*proc].flags & IN_USE)
++		return (EDEADEPT);
++	return (OK);
++}
++
++/*===========================================================================*
++ *				accept_message				     *
++ *===========================================================================*/
++int accept_message(message *m_ptr)
++{
++	/* accept all messages from PM and RS */
++	switch (m_ptr->m_source) {
++
++		case PM_PROC_NR:
++		case RS_PROC_NR:
++			return 1;
++			
++	}
++	
++	/* no other messages are allowable */
++	return 0;
++}
+diff -x '.*' -ruNP srclimpio/minix/servers/pm/schedule.c jurod3/minix/servers/pm/schedule.c
+--- srclimpio/minix/servers/pm/schedule.c	2016-05-20 00:56:00.000000000 -0400
++++ jurod3/minix/servers/pm/schedule.c	2016-06-10 01:30:40.000000000 -0400
+@@ -75,6 +75,7 @@
+ 		inherit_from = mproc[rmp->mp_parent].mp_endpoint;
+ 	}
+ 	
++	
+ 	/* inherit quantum */
+ 	return sched_inherit(ep, 			/* scheduler_e */
+ 		rmp->mp_endpoint, 			/* schedulee_e */
+diff -x '.*' -ruNP srclimpio/minix/servers/rs/table.c jurod3/minix/servers/rs/table.c
+--- srclimpio/minix/servers/rs/table.c	2016-05-20 00:56:00.000000000 -0400
++++ jurod3/minix/servers/rs/table.c	2016-06-10 01:30:40.000000000 -0400
+@@ -25,6 +25,8 @@
+ {MFS_PROC_NR,"fs_imgrd", SRV_F  },
+ {PFS_PROC_NR,  "pfs",    SRV_F  },
+ {INIT_PROC_NR, "init",   USR_F  },
++{NSCHED_PROC_NR, "nsched",   USR_F  },
++{FIRST_PROC_NR, "first",   USR_F  },
+ {NULL_BOOT_NR, "",       0,     } /* null entry */
+ };
+ 
+Binary files srclimpio/pruebas/prueba1/Captura de pantalla 2016-05-29 a las 10.21.17 a.m..png and jurod3/pruebas/prueba1/Captura de pantalla 2016-05-29 a las 10.21.17 a.m..png differ
+Binary files srclimpio/pruebas/prueba1/Captura de pantalla 2016-05-29 a las 10.21.23 a.m..png and jurod3/pruebas/prueba1/Captura de pantalla 2016-05-29 a las 10.21.23 a.m..png differ
+diff -x '.*' -ruNP srclimpio/pruebas/prueba1/en minix:kernel:proc.h se modifoco el archivo en l jurod3/pruebas/prueba1/en minix:kernel:proc.h se modifoco el archivo en l
+--- srclimpio/pruebas/prueba1/en minix:kernel:proc.h se modifoco el archivo en l	1969-12-31 21:00:00.000000000 -0300
++++ jurod3/pruebas/prueba1/en minix:kernel:proc.h se modifoco el archivo en l	2016-05-29 09:18:58.000000000 -0400
+@@ -0,0 +1 @@
++en minix/kernel/proc.h se modifoco el archivo en las lineas de switch_to_user agregue un identificador de proceso para ver si es padre o hijo para agregar aca el fcfs si es hijo pero primero quiero ver si los reconoce. El round robin ya esta implementado por defecto y es como calendariza minix. Se hace un fork para ver si me reconoce los hijos . Se compilo el kernel para hacer luego compilar el fork .c pero este no se pudo ejecutar ya que me reconocio los padres altiro y no inicio minix ya que constantemente esta imprimiendo soy el padre. La prox prueba se sacara la parte de imprimir al padre para ver si reconoce al hijo .
+\ No newline at end of file
+diff -x '.*' -ruNP srclimpio/pruebas/prueba1/fork.c jurod3/pruebas/prueba1/fork.c
+--- srclimpio/pruebas/prueba1/fork.c	1969-12-31 21:00:00.000000000 -0300
++++ jurod3/pruebas/prueba1/fork.c	2016-05-28 23:46:31.000000000 -0400
+@@ -0,0 +1,39 @@
++#include <stdio.h>
++#include <unistd.h>
++
++int main(int argc, char **argv)
++{
++    printf("--beginning of program\n");
++
++    int counter = 0;
++    pid_t pid = fork();
++
++    if (pid == 0)
++    {
++        // child process
++        int i = 0;
++        for (; i < 5; ++i)
++        {
++            printf("child process: counter=%d\n", ++counter);
++        }
++    }
++    else if (pid > 0)
++    {
++        // parent process
++        int j = 0;
++        for (; j < 5; ++j)
++        {
++            printf("parent process: counter=%d\n", ++counter);
++        }
++    }
++    else
++    {
++        // fork failed
++        printf("fork() failed!\n");
++        return 1;
++    }
++
++    printf("--end of program--\n");
++
++    return 0;
++}
+Binary files srclimpio/pruebas/prueba2/Captura de pantalla 2016-06-05 a las 9.23.00 p.m..png and jurod3/pruebas/prueba2/Captura de pantalla 2016-06-05 a las 9.23.00 p.m..png differ
+diff -x '.*' -ruNP srclimpio/pruebas/prueba2/prueba 2: modifique usr:src:minix:servers:pm:sched jurod3/pruebas/prueba2/prueba 2: modifique usr:src:minix:servers:pm:sched
+--- srclimpio/pruebas/prueba2/prueba 2: modifique usr:src:minix:servers:pm:sched	1969-12-31 21:00:00.000000000 -0300
++++ jurod3/pruebas/prueba2/prueba 2: modifique usr:src:minix:servers:pm:sched	2016-06-05 21:28:48.000000000 -0400
+@@ -0,0 +1 @@
++prueba 2: modifique usr/src/minix/servers/pm/schedule.c y se hizo la prueba de que retorna inherit from pero me equivoque al imprimir el valor ya que es un puntero y me retorna "i"
+\ No newline at end of file
+diff -x '.*' -ruNP srclimpio/releasetools/Makefile jurod3/releasetools/Makefile
+--- srclimpio/releasetools/Makefile	2016-05-20 00:56:00.000000000 -0400
++++ jurod3/releasetools/Makefile	2016-06-10 01:30:40.000000000 -0400
+@@ -24,6 +24,8 @@
+ PROGRAMS+= ${PROGROOT}/minix/servers/vm/vm
+ PROGRAMS+= ${PROGROOT}/minix/fs/pfs/pfs
+ PROGRAMS+= ${PROGROOT}/sbin/init/init
++PROGRAMS+= ${PROGROOT}/minix/servers/nsched/nsched
++PROGRAMS+= ${PROGROOT}/minix/servers/first/first
+ 
+ all usage help:
+ 	@echo " " >&2
