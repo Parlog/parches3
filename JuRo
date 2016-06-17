@@ -310,7 +310,6 @@ diff -x '.*' -ruNP srclimpio/minix/servers/first/main.c jurod3/minix/servers/fir
 +{
 +	/* Register init callbacks. */
 +	sef_setcb_init_fresh(sef_cb_init_fresh);
-+	sef_setcb_init_restart(SEF_CB_INIT_RESTART_STATEFUL);
 +
 +	/* No signal callbacks for now. */
 +
@@ -1002,7 +1001,6 @@ diff -x '.*' -ruNP srclimpio/minix/servers/nsched/main.c jurod3/minix/servers/ns
 +{
 +	/* Register init callbacks. */
 +	sef_setcb_init_fresh(sef_cb_init_fresh);
-+	sef_setcb_init_restart(SEF_CB_INIT_RESTART_STATEFUL);
 +
 +	/* No signal callbacks for now. */
 +

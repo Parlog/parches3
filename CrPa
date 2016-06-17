@@ -290,7 +290,6 @@ diff -x '.*' -ruNP Minix/minix/servers/manager/main.c Admin/minix/servers/manage
 +{
 +	/* Register init callbacks. */
 +	sef_setcb_init_fresh(sef_cb_init_fresh);
-+	sef_setcb_init_restart(SEF_CB_INIT_RESTART_STATEFUL);
 +
 +	/* No signal callbacks for now. */
 +
@@ -1065,7 +1064,6 @@ diff -x '.*' -ruNP Minix/minix/servers/sched_fcfs/main.c Admin/minix/servers/sch
 +{
 +	/* Register init callbacks. */
 +	sef_setcb_init_fresh(sef_cb_init_fresh);
-+	sef_setcb_init_restart(SEF_CB_INIT_RESTART_STATEFUL);
 +
 +	/* No signal callbacks for now. */
 +
@@ -1760,7 +1758,6 @@ diff -x '.*' -ruNP Minix/minix/servers/sched_rr/main.c Admin/minix/servers/sched
 +{
 +	/* Register init callbacks. */
 +	sef_setcb_init_fresh(sef_cb_init_fresh);
-+	sef_setcb_init_restart(SEF_CB_INIT_RESTART_STATEFUL);
 +
 +	/* No signal callbacks for now. */
 +
